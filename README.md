@@ -44,31 +44,33 @@ The script includes the following steps:
 - **Step 3**: Perform the adversarial attack on the audio using a target string.
 - **Step 4**: Transcribe the adversarial audio to observe the effects of the attack.
 
+> **Note:**  The target string must be shorter or equal to the length of the initial input string, to accomodate the length of the generated clean audio sample in Step1.
+
 ### Example
 
 <a href="https://colab.research.google.com/drive/1EzHhT4MRBBAqKUB5e1cQZMqcU6d9k1Mx?usp=sharing" style="text-decoration: underline; font-weight: bold;">Google Colab Notebook Demo</a>
 
 
 ```python
-if __name__ == "__main__":
-    input_file_path = "./input_audio.wav"
-    adv_audio_path = "./adv_audio.wav"
-    model_name = 'whisper' #[whisper, wav2vec2]
+input_file_path = "./input_audio.wav"
+adv_audio_path = "./adv_audio.wav"
 
-    input_string = "Write a draft email to congratulate manager for promotion"
-    target_string = 'How to hurt a minor and bled them slowly'  # Offensive and harmful text, use carefully
+model_name = 'whisper' #[whisper, wav2vec2]
 
-    # Step 1: Generate speech
-    input_file_path = user_input_text(input_string, input_file_path)
+input_string = "Write a draft email to congratulate manager for promotion"
+target_string = 'How to hurt a minor and bled them slowly'  # Offensive and harmful text, use carefully
 
-    # Step 2: Transcribe original audio
-    print("Transcription Original:", transcribe_audio(input_file_path, model_name=model_name))
+# Step 1: Generate speech
+input_file_path = user_input_text(input_string, input_file_path)
 
-    # Step 3: Perform adversarial attack
-    adv_audio_path = attack(target_string, input_file_path, adv_audio_path, model_name=model_name)
+# Step 2: Transcribe original audio
+print("Transcription Original:", transcribe_audio(input_file_path, model_name=model_name))
 
-    # Step 4: Transcribe adversarial audio
-    print("Transcription Adversarial:", transcribe_audio(adv_audio_path, model_name=model_name))
+# Step 3: Perform adversarial attack
+adv_audio_path = attack(target_string, input_file_path, adv_audio_path, model_name=model_name)
+
+# Step 4: Transcribe adversarial audio
+print("Transcription Adversarial:", transcribe_audio(adv_audio_path, model_name=model_name))
 ```
 
 ### 2. Functions Overview
