@@ -20,8 +20,8 @@ This project implements adversarial audio attacks on Speech-to-Text (STT) models
 
 1. Clone the repository:
    ```bash
-   git clone <repository-url>
-   cd <repository-directory>
+   git clone https://github.com/Repello-AI/Adversarial-Audio-Attack.git
+   cd Adversarial-Audio-Attack
    ```
 
 2. Install the required packages:
@@ -33,7 +33,11 @@ This project implements adversarial audio attacks on Speech-to-Text (STT) models
 
 ### 1. Generating Adversarial Audio
 
-To generate adversarial audio, you can run the `main.py` script. The script includes the following steps:
+To generate adversarial audio, you can run the `main.py` script.
+```python
+python main.py
+```
+The script includes the following steps:
 
 - **Step 1**: Generate speech from a given text input.
 - **Step 2**: Transcribe the original audio.
