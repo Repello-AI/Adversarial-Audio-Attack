@@ -14,38 +14,42 @@ from datasets import load_dataset
 import re
 from whisper_utils import _torch_extract_fbank_features
 import logging
+from utils import load_model_processor, preprocess_waveform, clean_punctuation
 
 # Suppress warnings from transformers
 logging.getLogger("transformers.modeling_utils").setLevel(logging.ERROR)
 logging.getLogger("TTS").setLevel(logging.ERROR)
 
 class BIM:
-    def __init__(self, model, model_name, images, target_label, eps, alpha,
-                 num_iters=0, random_state=False, processor=None, beta=0.1, verbose=False):
+    def __init__(self, model, model_name, audio, target_label, eps, alpha,
+                 num_iters=0, processor=None, beta=0.1, verbose=False):
+        
+        ## Initialize model and processor
         self.model = model
         self.model_name = model_name
+        self.processor = processor
         self.device = next(model.parameters()).device
-        self.orig_img = images.clone().detach().to(self.device)
-        self.eps = eps
-        self.target_label = re.sub(r'\s+', ' ', re.sub(r'[^a-zA-Z0-9\s]', '', target_label)).strip()
+        
+        ## Process target label
+        self.target_label = clean_punctuation(target_label)
         if self.model_name == 'wav2vec2':
             self.target_label = self.target_label.upper()
         elif self.model_name == 'whisper':
             self.target_label = self.target_label.lower()
+        
+        ## Hyperparameters
+        self.eps = eps
         self.alpha = alpha
-        self.rand = random_state
-        self.img_bim = images.clone().detach().to(torch.float32).requires_grad_(True)
-        self.img_bim = self.img_bim.to(self.device)
-        self.img_bim.retain_grad()
-        self.processor = processor
         self.beta = beta
+        self.num_iters = num_iters
         self.verbose=verbose
 
-        if not random_state:
-            self.num_iters = math.ceil(min((self.eps / self.alpha) + 4, 1.25 * (self.eps / self.alpha)))
-        else:
-            self.num_iters = num_iters
-
+        ## Initialize audio tensors
+        self.orig_audio = audio.clone().detach().to(self.device)
+        self.adv_audio = audio.clone().detach().to(torch.float32).requires_grad_(True)
+        self.adv_audio = self.adv_audio.to(self.device)
+        self.adv_audio.retain_grad()
+        
         if self.verbose:
             print("Num iters", self.num_iters)
             print('Target String:', self.target_label )
@@ -69,11 +73,11 @@ class BIM:
         labels = target_ids[:, 1:].clone()
         
         for i in progress_bar:
-            self.img_bim = self.img_bim.clone().detach().requires_grad_(True)
+            self.adv_audio = self.adv_audio.clone().detach().requires_grad_(True)
 
             if self.model_name == 'wav2vec2':
-                self.img_bim.requires_grad = True
-                input_values = self.img_bim.squeeze(0)
+                self.adv_audio.requires_grad = True
+                input_values = self.adv_audio.squeeze(0)
                 input_values = (input_values - input_values.mean()) / (input_values.std() + 1e-6)
                 input_values = input_values.unsqueeze(0)
                 assert input_values.requires_grad, "Input values must require gradients"
@@ -83,12 +87,12 @@ class BIM:
                 ctc_loss = self.compute_ctc_loss(logits, target_ids)
 
                 ## l2 penalty
-                l2_loss = torch.norm(self.img_bim - self.orig_img, p=2)
+                l2_loss = torch.norm(self.adv_audio - self.orig_audio, p=2)
                 loss = ctc_loss + self.beta * l2_loss
                 alignment_loss = ctc_loss
 
             elif self.model_name == 'whisper':
-                input_values = _torch_extract_fbank_features(self.img_bim)
+                input_values = _torch_extract_fbank_features(self.adv_audio)
                 input_values = input_values.to(self.device)
                 assert input_values.requires_grad, "Input values must require gradients"
                 output = self.model(
@@ -102,90 +106,50 @@ class BIM:
             ## backprop
             loss.backward()
 
-            if self.img_bim.grad is None:
-                raise ValueError("Gradients for img_bim are None.")
+            if self.adv_audio.grad is None:
+                raise ValueError("Gradients for adv_audio are None.")
 
             loss_arr.append(round(loss.item(), 4))
             progress_bar.set_postfix(loss=loss.item(), alignment_loss=alignment_loss.item())
 
             ## BIM Attack
-            grads = self.img_bim.grad
-            self.img_bim = self.img_bim - self.alpha * grads.data.detach().sign()
-            self.img_bim = torch.clamp(self.img_bim, min=-1, max=1)
-            self.img_bim = torch.clamp(self.img_bim, min=self.orig_img - self.eps, max=self.orig_img + self.eps)
-            self.img_bim = self.img_bim.clone().detach().requires_grad_(True)
+            grads = self.adv_audio.grad
+            self.adv_audio = self.adv_audio - self.alpha * grads.data.detach().sign()
+            self.adv_audio = torch.clamp(self.adv_audio, min=-1, max=1)
+            self.adv_audio = torch.clamp(self.adv_audio, min=self.orig_audio - self.eps, max=self.orig_audio + self.eps)
+            self.adv_audio = self.adv_audio.clone().detach().requires_grad_(True)
 
-            ## copy best value
+            ## store best value
             if alignment_loss.item() < best_loss:
                 best_loss = alignment_loss.item()
-                best_adv_audio = self.img_bim.clone().detach()
+                best_adv_audio = self.adv_audio.clone().detach()
 
             # ### Transcription after each iteration
             if self.verbose and i%50 == 0:
                 with torch.no_grad():
                     if self.model_name == 'wav2vec2':
-                        norm_audio = self.img_bim.squeeze(0)
+                        norm_audio = self.adv_audio.squeeze(0)
                         norm_audio = (norm_audio - norm_audio.mean()) / (norm_audio.std() + 1e-6)
                         input_values = self.processor(norm_audio, sampling_rate=16000, return_tensors="pt").input_values.to(self.device)
                         logits = self.model(input_values).logits
                         predicted_ids = torch.argmax(logits, dim=-1)
                     elif self.model_name == 'whisper':
-                        input_values = _torch_extract_fbank_features(self.img_bim)
+                        input_values = _torch_extract_fbank_features(self.adv_audio)
                         input_values = input_values.to(self.device)
                         predicted_ids = self.model.generate(input_values)
 
                     transcription = self.processor.batch_decode(predicted_ids, skip_special_tokens=True)[0]
+                    transcription = clean_punctuation(transcription)
                     print(f"\n[Step {i+1}] Transcription: {transcription}\n")
 
-                    if transcription.upper().strip() == self.target_label.upper().strip():
+                    if transcription.upper() == self.target_label.upper():
                         print("Target reached")
-                        best_adv_audio = self.img_bim.clone().detach()
-                        clipped_delta = torch.clamp(best_adv_audio.data - self.orig_img.data, -self.eps, self.eps)
-                        return best_adv_audio, best_adv_audio - self.orig_img, loss_arr
+                        best_adv_audio = self.adv_audio.clone().detach()
+                        clipped_delta = torch.clamp(best_adv_audio.data - self.orig_audio.data, -self.eps, self.eps)
+                        return best_adv_audio, best_adv_audio - self.orig_audio, loss_arr
 
-        clipped_delta = torch.clamp(best_adv_audio.data - self.orig_img.data, -self.eps, self.eps)
+        clipped_delta = torch.clamp(best_adv_audio.data - self.orig_audio.data, -self.eps, self.eps)
         return best_adv_audio, clipped_delta, loss_arr
-
-def loadwav2vec2():
-    model_name = "facebook/wav2vec2-base-960h"
-    processor = Wav2Vec2Processor.from_pretrained(model_name)
-    model = Wav2Vec2ForCTC.from_pretrained(model_name)
-    model.eval()
-    return model, processor
-
-def load_whisper():
-    from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
-    model_id = "openai/whisper-base"
-    processor = AutoProcessor.from_pretrained(model_id)
-    model = AutoModelForSpeechSeq2Seq.from_pretrained(model_id)
-    processor.tokenizer.set_prefix_tokens(language="en", task="transcribe")
-    model.eval()
-    return model, processor
-
-def load_model_processor(model_name, verbose=True):
-    if model_name == 'wav2vec2':
-        model, processor = loadwav2vec2()
-        if verbose:
-            print('Loaded Wav2Vec2 model successfully')
-
-    elif model_name == 'whisper':
-        model, processor = load_whisper()
-        if verbose:
-            print('Loaded Whisper model successfully')
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model.to(device)
-    return model, processor
-
-def preprocess_waveform(wv, sample_rate, target_sample_rate=16000):
-    if sample_rate != target_sample_rate:
-        resampler = torchaudio.transforms.Resample(orig_freq=sample_rate, new_freq=target_sample_rate)
-        wv = resampler(wv)
-        sample_rate = target_sample_rate
-
-    wv = wv.mean(dim=0)  # Convert to mono
-    wv = wv.unsqueeze(0)  # Add batch dimension
-
-    return wv, target_sample_rate
 
 def get_predictions(audio, model, processor, target_sample_rate,  model_name):
     if model_name == 'wav2vec2':
@@ -239,7 +203,6 @@ def attack(target_string, input_file_path, adv_audio_path, model_name):
         eps = 0.05
         alpha = 0.01
     num_iters = 600
-    random_state = True
     beta = 0.1  # L2 penalty coefficient
     verbose=True
 
@@ -251,12 +214,11 @@ def attack(target_string, input_file_path, adv_audio_path, model_name):
     model, processor = load_model_processor(model_name, verbose=True)
     model = model.to(device)
 
-    bim = BIM(model, model_name, audio, target_string, eps, alpha, num_iters, random_state, processor=processor, beta=beta, verbose=verbose)
-    adv_audio, delta, loss_arr = bim.attack()
+    bim = BIM(model, model_name, audio, target_string, eps, alpha, num_iters, processor=processor, beta=beta, verbose=verbose)
+    adv_audio, _, _ = bim.attack()
 
     torchaudio.save(adv_audio_path, adv_audio.detach().cpu(), target_sample_rate)
     return adv_audio_path
-
 
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

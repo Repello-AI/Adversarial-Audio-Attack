@@ -1,4 +1,6 @@
-## Helper functions for Whisper model taken from WhisperFeatureExtractor's implementation in HuggingFace's Transformers library
+## Helper functions for Whisper model to convert raw audio to mel spectrogram.
+## Taken from WhisperFeatureExtractor's implementation in HuggingFace's Transformers library, transformed to Torch from numpy for gradient computation
+
 import numpy as np
 import warnings
 import torch
