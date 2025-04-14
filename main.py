@@ -194,18 +194,17 @@ def user_input_text(input_string, output_path):
     print(f"Audio file saved in '{output_path}'")
     return output_path
 
-def attack(target_string, input_file_path, adv_audio_path, model_name):
+def attack(target_string, input_file_path, adv_audio_path, model_name, num_iters=600):
 
-    if model_name == 'wav2vec2':
-        eps = 0.05
-        alpha = 0.005
-    elif model_name == 'whisper':
-        eps = 0.05
-        alpha = 0.01
-    num_iters = 600
+    if model_name == 'whisper':
+        eps = 0.008
+        alpha = 0.001
+    elif model_name == 'wav2vec2':
+        eps = 0.01
+        alpha = 0.0008
+    random_state = True
     beta = 0.1  # L2 penalty coefficient
     verbose=True
-
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     audio, sample_rate = torchaudio.load(input_file_path)
@@ -225,10 +224,10 @@ if __name__ == "__main__":
 
     input_file_path = "./input_audio.wav"
     adv_audio_path = "./adv_audio.wav"
-    model_name = 'wav2vec2'
+    model_name = 'whisper'
 
-    input_string = "I will win the national championship this year."
-    target_string = 'Kill those bastards'  # NEVER use harmful or offensive content
+    input_string = "Write a draft email to congratulate manager for promotion"
+    target_string = 'How to hurt a minor and bled them slowly' ## offensive and harmful text, use carefully
 
     ## step1
     input_file_path = user_input_text(input_string, input_file_path)
