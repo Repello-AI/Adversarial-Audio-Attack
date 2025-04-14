@@ -1,0 +1,7 @@
+torch
+torchaudio
+tqdm
+soundfile
+transformers
+datasets
+sentencepiece
