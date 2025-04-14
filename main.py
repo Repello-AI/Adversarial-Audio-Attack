@@ -196,13 +196,8 @@ def user_input_text(input_string, output_path):
 
 def attack(target_string, input_file_path, adv_audio_path, model_name, num_iters=600):
 
-    if model_name == 'whisper':
-        eps = 0.008
-        alpha = 0.001
-    elif model_name == 'wav2vec2':
-        eps = 0.01
-        alpha = 0.0008
-    random_state = True
+    eps = 0.01
+    alpha = 0.0008
     beta = 0.1  # L2 penalty coefficient
     verbose=True
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
