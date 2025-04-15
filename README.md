@@ -82,10 +82,10 @@ print("Transcription Adversarial:", transcribe_audio(adv_audio_path, model_name=
 > For targeted attacks, try increasing the `num_iters` in `attack()`, if the default value isn't able to produce required target transcription.
 
 
-## Huggingface-Space
-To access the tool without the hassle of running the code, we have also launched a Gradio Interface on HuggingFace-Space which you can access with the following link:
+## Playground
+To access the tool without the hassle of running the code, we have also launched a Gradio Interface which you can access with the following link:
 
-https://huggingface.co/spaces/repelloai/adversarial_audio_attack
+https://ghostnote.repello.ai/
 
 ## Disclaimer
 
