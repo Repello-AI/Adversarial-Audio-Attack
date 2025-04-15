@@ -3,6 +3,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+input_audio.wav
+output_audio.wav
+attacked_audio.wav
+
 # C extensions
 *.so
 
